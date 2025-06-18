@@ -6,15 +6,15 @@
 % phase differences tau are taken into account: s(k,l)e^(-j2*pi*k*tau(d)/N)
 
 clc
-clear all
+clear
 close all
 
 %% Load received signals and noise 
-[s_clean_1, ]=audioread(['clean_speech.wav']);
-[s_clean_2, ]=audioread(['clean_speech_2.wav']);
-[n_babble, Fs]=audioread(['babble_noise.wav']);
-[n_artif_nonstat, ]=audioread(['aritificial_nonstat_noise.wav']); 
-[n_speech_shaped, ]=audioread(['Speech_shaped_noise.wav']); 
+[s_clean_1, ]=audioread('clean_speech.wav');
+[s_clean_2, ]=audioread('clean_speech_2.wav');
+[n_babble, Fs]=audioread('babble_noise.wav');
+[n_artif_nonstat, ]=audioread('aritificial_nonstat_noise.wav'); 
+[n_speech_shaped, ]=audioread('Speech_shaped_noise.wav'); 
 
 % audioinfo('clean_speech.wav')
 
@@ -68,13 +68,13 @@ stft_s_clean_2 = stft(s_clean_2, Fs, ...
     'FFTLength', FFTLength);
 
 % Plot signal magnitude with respect to frequency and time
-surf(abs(stft_s_clean_1))
-shading interp
-cp  = constantplane("z", 0.5, FaceAlpha=0.5);
-title('2D matrix magnitude w.r.t. frequency and time')
-ylabel('Frequency[Hz]')
-xlabel('Time[n]')
-zlabel('|Magnitude|[-]')
+% surf(abs(stft_s_clean_1))
+% shading interp
+% cp  = constantplane("z", 0.5, FaceAlpha=0.5);
+% title('2D matrix magnitude w.r.t. frequency and time')
+% ylabel('Frequency[Hz]')
+% xlabel('Time[n]')
+% zlabel('|Magnitude|[-]')
 
 % plot(sum(abs(stft_s_clean_1),1))
 
@@ -87,7 +87,7 @@ A_f_target = fftshift(fft(h_target, FFTLength, 2));
 A_f_target = A_f_target./A_f_target(1,:);
 A_f_inter_1 = fftshift(fft(h_inter1, FFTLength, 2));
 A_f_inter_1 = A_f_inter_1./A_f_inter_1(1,:);
-
+%%
 % Create the measurement matrix with the interferers and the noise sources
 % the rows (first dimension) are represent the received signals at the four 
 % different microphones, the columns (second dimension) represent the
@@ -136,24 +136,28 @@ reconst_s_freq = delay_and_sum(X_int, A_f_target, FFTLength);
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 % % sound(real(orig_sig), Fs);
-% figure(2)
-% plot(t_orig_ds, real(orig_sig_ds))
-% title("Reconstructed s using delay-and-sum")
+figure(2)
+plot(t_orig_ds, real(rec_s_ds))
+title("Reconstructed s using delay-and-sum")
 
 
 %% Construct MVDR beamformer
 
-s_MVDR = MVDR(X, A_f_target, FFTLength, x_corr);
+w_MVDR_f = MVDR(X, A_f_target, FFTLength, x_corr);
 
 %% Plot reconstruct original signal using the MVDR beamformer
+
 [rec_s_MVDR, t_orig_MVDR] = istft(s_MVDR, Fs, ...
                     'Window', window, ...
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
+
+s_MVDR(f_i, t_i) = w_MVDR'*X(:,f_i,t_i);
+
 % % sound(real(orig_sig), Fs);
-% figure()
-% plot(t_orig_MVDR, real(rec_s_MVDR))
-% title("Reconstructed s using delay-and-sum")
+figure()
+plot(t_orig_MVDR, real(rec_s_MVDR))
+title("Reconstructed s using delay-and-sum")
 
 %% Construct optimal linear multi-channel Wiener with channel known
 
@@ -170,9 +174,77 @@ s_LMCW_known_A = LMCW_known_A(X, n_inter_corr, A_f_target, var,FFTLength);
 % plot(t_orig_LMCW, real(rec_s_LMCW))
 % title("Reconstructed s using LMCW")
 
+%% Compute GEVD from known Rn and Rx
+Rs_hat = zeros(M,M,FFTLength,len_X_measurements);
+for l = 1:len_X_measurements 
+    for k = 1:FFTLength
+        % To compute the (unique) Hermitian square root, compute the EVD of
+        % the noise correlation matrix. (A Schur method for the square root
+        % of a matrix, Å. Björck, S. Hammarling).
+        [V_n, lambda_n] = eig(n_inter_corr(:,:,k,l));
+
+        % Compute the square root of all individual eigenvalues
+        sqrt_lambda_n = sqrt(diag(lambda_n));
+        sqrt_lambda_n = diag(sqrt_lambda_n);
+
+        % Compute Hermitian square root 
+        R_n_sqrt = V_n*sqrt_lambda_n*V_n';
+
+        % Due to noise the matrix may be non-Hermitian. To ensure a
+        % Hermitian structure to compute the average between R_n_sqrt and
+        % the Hermitian of R_n_sqrt.
+        R_n_sqrt = (R_n_sqrt * R_n_sqrt')/2;
+
+        % Step 1: Transform process x
+        trans_x = R_n_sqrt\X(:,k,l);
+
+        % Compute the correlation of the transformed process x
+        Rtrans_x = xcorr(trans_x);
+        Rtrans_x = toeplitz(Rtrans_x(4:7));
+
+        % Step 2: Compute the EVD of the transformed correlation of the 
+        % process x. The eig() function computes eigenvalues in an
+        % ascending order. Since there are two sources select the last two
+        % eigenvalues corresponding to these sources and put them in
+        % descending order.
+        [U, D] = eig(Rtrans_x);
+        D_sig = diag(flip([D(3,3); D(end)] - 1,1));
+        U_sig = fliplr(U(:,1:2));
+
+        % Step 3: Estimate Rs_hat
+        Rs_hat_tilda = U_sig*D_sig*U_sig';
+
+        % Step 4: De-whiten the resulted Rs_hat
+        Rs_hat(:,:,k,l) = R_n_sqrt*Rs_hat_tilda*R_n_sqrt;
+    end
+    disp(['Progress: ', num2str(l), ' from ', num2str(len_X_measurements)])
+end
+
+% Compute the LMCW beamformer from the estimated Rs and Rn
+LMCW_s_Rs_hat_exact = zeros(FFTLength, len_X_measurements);
+for k = 1:FFTLength
+    for l = 1:len_X_measurements
+        % If singular values are close to singular values take then the
+        % pseudo-inverse since the columns are not independent and the
+        % inverse can blow up values close to zero.
+        % if rcond(squeeze(Rx_est(:,:,k,l)))<1e-9
+        %     inv_Rx = pinv(squeeze(Rx_est(:,:,k,l)));
+        %     e_1 = [1;0;0;0];
+        %     w_MWF = inv_Rx*Rs_hat(:,:,k,l)*e_1;
+        % else
+        inv_Rx = squeeze(Rx_est(:,:,k,l)) + diag([1e-9;1e-9;1e-9;1e-9]);
+        e_1 = [1;0;0;0];
+        w_MWF = inv_Rx\Rs_hat(:,:,k,l)*e_1;
+        % end
+        
+        LMCW_s_Rs_hat_exact(k,l) = w_MWF'*X(:,k,l);
+    end
+    disp(['Progress: ', num2str(k), ' from ', num2str(FFTLength)])
+end
+
 %% Estimate Rn using ergodicity and use that to estimate Rs using the GEVD
 
-Rs_hat = zeros(M,M,FFTLength,len_X_measurements);
+Rs_hat_est = zeros(M,M,FFTLength,len_X_measurements);
 Rx_est = zeros(M,M,FFTLength,len_X_measurements);
 Rn_est = squeeze(n_inter_corr(:,:,1,1));
 alpha_n = 0.6;
@@ -220,7 +292,7 @@ for l = 1:len_X_measurements
         Rs_hat_tilda = U_sig*D_sig*U_sig';
 
         % Step 4: De-whiten the resulted Rs_hat
-        Rs_hat(:,:,k,l) = R_n_sqrt*Rs_hat_tilda*R_n_sqrt;
+        Rs_hat_est(:,:,k,l) = R_n_sqrt*Rs_hat_tilda*R_n_sqrt;
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         % Estimate Rx using an iterative updating algorithm
@@ -239,34 +311,7 @@ for l = 1:len_X_measurements
     disp(['Progress: ', num2str(l), ' from ', num2str(len_X_measurements)])
 end
 
-%%
-Rx_est = zeros(M,M,FFTLength,len_X_measurements);
-LMCW_s_Rs_hat = zeros(FFTLength, len_X_measurements);
-for k = 1:FFTLength
-    for l =1:len_X_measurements
-        % Estimate Rx using an iterative updating algorithm
-        alpha = 0.1;
-        % Estimate the noise in the received signal
-        if l==1
-            % Initialize Rx_est
-            Rx_est(:,:,k,l) = X(:,k,l)*X(:,k,l)';
-        else
-            % Update Rx_est each time with the Rx at the current time
-            % instance
-            Rx_est(:,:,k,l) = Rx_est(:,:,k,l-1)*alpha + ... 
-                                X(:,k,l)*X(:,k,l)'*(1-alpha);
-        end
-
-        inv_Rx = squeeze(Rx_est(:,:,k,l)) + diag([1e-9;1e-9;1e-9;1e-9]);
-        e_1 = [1;0;0;0];
-        w_MWF = inv_Rx\Rs_hat(:,:,k,l)*e_1;
-        % end
-        
-        LMCW_s_Rs_hat(k,l) = w_MWF'*X(:,k,l);
-    end
-    disp(['Progress: ', num2str(k), ' from ', num2str(FFTLength)])
-end
-%% Compute the LMCW beamformer
+% Compute the LMCW beamformer from the estimated Rs and Rn
 LMCW_s_Rs_hat = zeros(FFTLength, len_X_measurements);
 for k = 1:FFTLength
     for l = 1:len_X_measurements
@@ -293,10 +338,11 @@ end
                     'Window', window, ...
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
-sound(real(rec_s_LMCW_Rs_hat), Fs);
+% sound(real(rec_s_LMCW_Rs_hat), Fs);
 figure()
 plot(t_orig_LMCW_Rs_hat, real(rec_s_LMCW_Rs_hat))
 title("Reconstructed s using LMCW")
 
 %% Evaluate performance
-
+s_clean_1_test = s_clean_1(6:end-5);
+metric_MVDR = stoi(real(rec_s_LMCW),real(s_clean_1_test),Fs);
