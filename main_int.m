@@ -106,22 +106,32 @@ for i_f = 1:FFTLength
 end
 
 %% Compute the covariance matrix of the measurement and noise matrix
-x_corr = ones(M, M, FFTLength, len_X_measurements);
+x_corr = zeros(M, M, FFTLength, len_X_measurements);
 n_inter_corr = zeros(M, M, FFTLength, len_X_measurements);
+n_inter_corr_inv = zeros(M, M, FFTLength, len_X_measurements);
+x_corr_inv = zeros(M, M, FFTLength, len_X_measurements);
 for k = 1:FFTLength
     for l = 1: len_X_measurements
-        % normalized_x = X(:,k,l);%./ max(abs(X(:,k,l)));
-        % normalized_n = X_int(:,k,l);%./ max(abs(X_int(:,k,l)));
+        normalized_x = X(:,k,l);%./ max(abs(X(:,k,l)));
+        normalized_n = X_int(:,k,l);%./ max(abs(X_int(:,k,l)));
 
         % Compute the measuremnt correlation
-        rx = xcorr(X(:,k,l));
-        rx = toeplitz(rx(4:7));
-        x_corr(:,:,k,l) = rx;
+        % rx = xcorr(X(:,k,l));
+        % rx = toeplitz(rx(4:7));
+        % x_corr(:,:,k,l) = rx;
+        rx = X(:,k,l)*X(:,k,l)';
+        x_corr(:,:,k,l)=rx;
+        x_corr_inv(:,:,k,l) = pinv(rx);
         
         % Compute the noise correlation matrix
-        rn = xcorr(X_int(:,k,l));
-        rn = toeplitz(rn(4:7));
-        n_inter_corr(:,:,k,l) = rn;
+        % rn = xcorr(X_int(:,k,l));
+        % rn = toeplitz(rn(4:7));
+        % n_inter_corr(:,:,k,l) = rn;
+        rn = X_int(:,k,l)*X_int(:,k,l)';
+        n_inter_corr_inv(:,:,k,l) = pinv(rn);
+        % x_corr(:,:,k,l)=X(:,k,l)*X(:,k,l)';
+        % n_inter_corr(:,:,k,l)=X_int(:,k,l)*X_int(:,k,l)';
+        % disp(['Progress: ', num2str(l), ' from ', num2str(len_X_measurements)])
     end
     disp(['Progress: ', num2str(k), ' from ', num2str(FFTLength)])
 end
@@ -143,19 +153,18 @@ title("Reconstructed s using delay-and-sum")
 
 %% Construct MVDR beamformer
 
-w_MVDR_f = MVDR(X, A_f_target, FFTLength, x_corr);
+s_MVDR = MVDR(X, A_f_target, FFTLength, x_corr_inv);
 
 %% Plot reconstruct original signal using the MVDR beamformer
+% s_MVDR(f_i, t_i) = w_MVDR_f'*X(:,f_i,t_i);
 
-[rec_s_MVDR, t_orig_MVDR] = istft(s_MVDR, Fs, ...
+[rec_s_MVDR, t_orig_MVDR] = istft(w_MVDR_f, Fs, ...
                     'Window', window, ...
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 
-s_MVDR(f_i, t_i) = w_MVDR'*X(:,f_i,t_i);
-
 % % sound(real(orig_sig), Fs);
-figure()
+figure(2)
 plot(t_orig_MVDR, real(rec_s_MVDR))
 title("Reconstructed s using delay-and-sum")
 
@@ -220,6 +229,7 @@ for l = 1:len_X_measurements
     disp(['Progress: ', num2str(l), ' from ', num2str(len_X_measurements)])
 end
 
+%%
 % Compute the LMCW beamformer from the estimated Rs and Rn
 LMCW_s_Rs_hat_exact = zeros(FFTLength, len_X_measurements);
 for k = 1:FFTLength
@@ -345,4 +355,4 @@ title("Reconstructed s using LMCW")
 
 %% Evaluate performance
 s_clean_1_test = s_clean_1(6:end-5);
-metric_MVDR = stoi(real(rec_s_LMCW),real(s_clean_1_test),Fs);
+metric_MVDR = stoi(real(rec_s_ds),real(s_clean_1_test),Fs)

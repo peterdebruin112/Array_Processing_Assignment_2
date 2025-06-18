@@ -1,15 +1,16 @@
-function s_LMCW = LMCW_known_A(X, n_inter_corr, A_f_target, var,FFTLength);
+function s_LMCW = LMCW_known_A(X, n_inter_corr_inv, A_f_target, var,FFTLength);
     %LMCW_KNOWN_A Combines a MVDR and a Single-channel Wiener filter.
     len_X_measurements = size(var, 2);
     s_LMCW = zeros(FFTLength, len_X_measurements);
     for f_i = 1:FFTLength
         for t_i = 1:len_X_measurements 
             % Select the noise correlation matrix.
-            inv_corr = inv(squeeze(n_inter_corr(:,:,f_i,t_i)));
+            inv_corr = squeeze(n_inter_corr_inv(:,:,f_i,t_i));
 
             % Compute the elements of the LMCW filter.
             MVDR_num = inv_corr*A_f_target(:,f_i);
-            MVDR_denom = 1/(A_f_target(:,f_i)'*inv_corr*A_f_target(:,f_i));
+            denom = (A_f_target(:,f_i)'*inv_corr*A_f_target(:,f_i));
+            MVDR_denom = 1/denom;
             Wiener_denom = (var(f_i, t_i)+MVDR_denom);
 
             % Compute the LMCW filter.
