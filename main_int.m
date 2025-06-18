@@ -27,7 +27,7 @@ n_artif_nonstat = n_artif_nonstat(1:N_tot, :);
 n_speech_shaped = n_speech_shaped(1:N_tot, :);
 
 %% Scalle noise to specific SNR  
-SNR = 0;
+SNR = 20;
 Noise = n_babble + n_artif_nonstat + n_speech_shaped;
 
 signalPower =  mean(s_clean_1.^ 2);
@@ -145,7 +145,7 @@ s_MVDR = MVDR(X, A_f_target, FFTLength, x_corr_inv);
 %% Plot reconstruct original signal using the MVDR beamformer
 
 % Reconstruct the signal in time domain
-[rec_s_MVDR, t_orig_MVDR] = istft(w_MVDR_f, Fs, ...
+[rec_s_MVDR, t_orig_MVDR] = istft(s_MVDR, Fs, ...
                     'Window', window, ...
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
@@ -175,8 +175,7 @@ Rs_hat = zeros(M,M,FFTLength,len_X_measurements);
 for k = 1:FFTLength
     for l = 1:len_X_measurements
         % To compute the (unique) Hermitian square root, compute the EVD of
-        % the noise correlation matrix. (A Schur method for the square root
-        % of a matrix, Å. Björck, S. Hammarling).
+        % the noise correlation matrix.
         [V_n, lambda_n] = eig(n_inter_corr(:,:,k,l));
 
         % Compute the square root of all individual eigenvalues
@@ -230,7 +229,7 @@ for k = 1:FFTLength
 
         % Compute the MWF beamformer
         w_MWF = inv_Rx\Rs_hat(:,:,k,l)*e_1;
-        
+
         % Reconstruct the frequency domain signal 
         LMCW_s_Rs_hat_exact(k,l) = w_MWF'*X(:,k,l);
     end
@@ -251,14 +250,13 @@ for l = 1:len_X_measurements
     end
     for k = 1:FFTLength
         % To compute the (unique) Hermitian square root, compute the EVD of
-        % the noise correlation matrix. (A Schur method for the square root
-        % of a matrix, Å. Björck, S. Hammarling).
+        % the noise correlation matrix. 
         [V_n, lambda_n] = eig(Rn_est);
 
         % Compute the square root of all individual eigenvalues
         sqrt_lambda_n = sqrt(diag(lambda_n));
         sqrt_lambda_n = diag(sqrt_lambda_n);
-        
+
         % Compute Hermitian square root 
         R_n_sqrt = V_n*sqrt_lambda_n*V_n';
 
@@ -266,14 +264,14 @@ for l = 1:len_X_measurements
         % Hermitian structure to compute the average between R_n_sqrt and
         % the Hermitian of R_n_sqrt.
         R_n_sqrt = (R_n_sqrt * R_n_sqrt')/2;
-        
+
         % Step 1: Transform process x
         trans_x = inv(R_n_sqrt)*X(:,k,l);
-        
+
         % Compute the correlation of the transformed process x
         Rtrans_x = xcorr(trans_x);
         Rtrans_x = toeplitz(Rtrans_x(4:7));
-        
+
         % Step 2: Compute the EVD of the transformed correlation of the 
         % process x. The eig() function computes eigenvalues in an
         % ascending order. Since there are two sources select the last two
@@ -282,7 +280,7 @@ for l = 1:len_X_measurements
         [U, D] = eig(Rtrans_x);
         D_sig = diag(flip([D(3,3); D(end)] - 1,1));
         U_sig = fliplr(U(:,1:2));
-        
+
         % Step 3: Estimate Rs_hat
         Rs_hat_tilda = U_sig*D_sig*U_sig';
 
@@ -318,7 +316,7 @@ for k = 1:FFTLength
 
         % Compute the MWF beamformer
         w_MWF = inv_Rx\Rs_hat(:,:,k,l)*e_1;
-        
+
         % Reconstruct the frequency domain signal 
         LMCW_s_Rs_hat = w_MWF'*X(:,k,l);
     end
