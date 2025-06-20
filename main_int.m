@@ -27,7 +27,7 @@ n_artif_nonstat = n_artif_nonstat(1:N_tot, :);
 n_speech_shaped = n_speech_shaped(1:N_tot, :);
 
 %% Scalle noise to specific SNR  
-SNR = 20;
+SNR = -10;
 Noise = n_babble + n_artif_nonstat + n_speech_shaped;
 
 signalPower =  mean(s_clean_1.^ 2);
@@ -59,7 +59,23 @@ stft_s_clean_1 = stft(s_clean_1, Fs, ...
     'Window', window, ...
     'OverLapLength', N_fast_time*0.95, ...
     'FFTLength', FFTLength);
+
 stft_noise = stft(Noise, Fs, ...
+    'Window', window, ...
+    'OverLapLength', N_fast_time*0.95, ...
+    'FFTLength', FFTLength);
+
+stft_babble_noise = stft(n_babble, Fs, ...
+    'Window', window, ...
+    'OverLapLength', N_fast_time*0.95, ...
+    'FFTLength', FFTLength);
+
+stft_artif_nonstat = stft(n_artif_nonstat, Fs, ...
+    'Window', window, ...
+    'OverLapLength', N_fast_time*0.95, ...
+    'FFTLength', FFTLength);
+
+stft_speech_shaped = stft(n_speech_shaped, Fs, ...
     'Window', window, ...
     'OverLapLength', N_fast_time*0.95, ...
     'FFTLength', FFTLength);
@@ -83,6 +99,12 @@ A_f_target = A_f_target./A_f_target(1,:);
 A_f_inter_1 = fftshift(fft(h_inter1, FFTLength, 2));
 A_f_inter_1 = A_f_inter_1./A_f_inter_1(1,:);
 
+A_f_inter_2 = fftshift(fft(h_inter2, FFTLength, 2));
+A_f_inter_2 = A_f_inter_2./A_f_inter_2(1,:);
+
+A_f_inter_3 = fftshift(fft(h_inter3, FFTLength, 2));
+A_f_inter_3 = A_f_inter_3./A_f_inter_3(1,:);
+
 % Create the measurement matrix with the interferers and the noise sources
 % the rows (first dimension) are represent the received signals at the four 
 % different microphones, the columns (second dimension) represent the
@@ -96,7 +118,10 @@ X     = zeros(M,FFTLength, len_X_measurements);
 % Compute the measurement signal in frequency domain
 for i_f = 1:FFTLength
     X_s(:, i_f, :) =(A_f_target(:,i_f)*stft_s_clean_1(i_f,:));
-    X_int(:, i_f, :) = A_f_inter_1(:,i_f)*stft_noise(i_f,:); 
+    %X_int(:, i_f, :) = A_f_inter_1(:,i_f)*stft_noise(i_f,:); 
+    X_int(:, i_f, :) = A_f_inter_1(:,i_f,:)*stft_babble_noise(i_f,:) + ...
+        A_f_inter_2(:,i_f,:)*stft_artif_nonstat(i_f,:) + ...
+        A_f_inter_3(:,i_f,:)*stft_speech_shaped(i_f,:);
     X(:, i_f, :) = X_int(:, i_f, :) + X_s(:, i_f, :);
     disp(['Progress: ', num2str(i_f), ' from ', num2str(FFTLength)])
 end
@@ -112,12 +137,12 @@ for k = 1:FFTLength
         % Compute the measuremnt correlation
         rx = X(:,k,l)*X(:,k,l)';
         x_corr(:,:,k,l)=rx;
-        x_corr_inv(:,:,k,l) = pinv(rx);
+        x_corr_inv(:,:,k,l) = inv(rx);
         
         % Compute the noise correlation matrix
         rn = X_int(:,k,l)*X_int(:,k,l)';
         n_inter_corr(:,:,k,l) = rn;
-        n_inter_corr_inv(:,:,k,l) = pinv(rn);
+        n_inter_corr_inv(:,:,k,l) = inv(rn);
     end
     disp(['Progress: ', num2str(k), ' from ', num2str(FFTLength)])
 end
@@ -135,7 +160,7 @@ s_del_and_sum = delay_and_sum(X, A_f_target, FFTLength);
 
 % Compute STOI of the reconstructed signal from the delay-and-sum
 % beamformer.
-file_name_ds = [num2str(SNR), 'dbSNR_D_S.wav'];
+file_name_ds = [num2str(SNR), 'dbSNR_D_S_new_noise.wav'];
 audiowrite(file_name_ds,real(rec_s_ds),Fs)
 s_clean_1_test = s_clean_1(6:end-5);
 metric_d_and_s = stoi(real(rec_s_ds),real(s_clean_1_test),Fs);
@@ -152,7 +177,7 @@ s_MVDR = MVDR(X, A_f_target, FFTLength, x_corr_inv);
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 
-file_name_ds = [num2str(SNR), 'dbSNR_MVDR.wav'];
+file_name_ds = [num2str(SNR), 'dbSNR_MVDR_new_noise.wav'];
 audiowrite(file_name_ds,real(rec_s_MVDR),Fs)
 % Compute STOI of the reconstructed signal from the MVDR beamformer.
 metric_mvdr = stoi(real(rec_s_MVDR),real(s_clean_1_test),Fs);
@@ -171,7 +196,7 @@ s_LMCW_known_A = LMCW_known_A(X, n_inter_corr_inv, A_f_target, var,FFTLength);
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 
-file_name_ds = [num2str(SNR), 'dbSNR_MCW.wav'];
+file_name_ds = [num2str(SNR), 'dbSNR_MCW_new_noise.wav'];
 audiowrite(file_name_ds,real(rec_s_LMCW),Fs)
 % Compute STOI of the reconstructed signal from the MCW beamformer.
 metric_mwc = stoi(real(rec_s_LMCW),real(s_clean_1_test),Fs);
