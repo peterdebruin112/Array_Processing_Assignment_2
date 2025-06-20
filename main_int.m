@@ -125,7 +125,7 @@ end
 %% Construct delay-and-sum beamformer using the exact target impulse reponse
 
 % Reconstruct the signal in time domain
-s_del_and_sum = delay_and_sum(X_int, A_f_target, FFTLength);
+s_del_and_sum = delay_and_sum(X, A_f_target, FFTLength);
 
 %% reconstruct original signal
 [rec_s_ds, t_orig_ds] = istft(s_del_and_sum, Fs, ...
@@ -135,6 +135,8 @@ s_del_and_sum = delay_and_sum(X_int, A_f_target, FFTLength);
 
 % Compute STOI of the reconstructed signal from the delay-and-sum
 % beamformer.
+file_name_ds = [num2str(SNR), 'dbSNR_D_S.wav'];
+audiowrite(file_name_ds,real(rec_s_ds),Fs)
 s_clean_1_test = s_clean_1(6:end-5);
 metric_d_and_s = stoi(real(rec_s_ds),real(s_clean_1_test),Fs);
 
@@ -150,6 +152,8 @@ s_MVDR = MVDR(X, A_f_target, FFTLength, x_corr_inv);
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 
+file_name_ds = [num2str(SNR), 'dbSNR_MVDR.wav'];
+audiowrite(file_name_ds,real(rec_s_MVDR),Fs)
 % Compute STOI of the reconstructed signal from the MVDR beamformer.
 metric_mvdr = stoi(real(rec_s_MVDR),real(s_clean_1_test),Fs);
 
@@ -167,6 +171,8 @@ s_LMCW_known_A = LMCW_known_A(X, n_inter_corr_inv, A_f_target, var,FFTLength);
                     'OverLapLength', N_fast_time*0.95, ...
                     'FFTLength', FFTLength);
 
+file_name_ds = [num2str(SNR), 'dbSNR_MCW.wav'];
+audiowrite(file_name_ds,real(rec_s_LMCW),Fs)
 % Compute STOI of the reconstructed signal from the MCW beamformer.
 metric_mwc = stoi(real(rec_s_LMCW),real(s_clean_1_test),Fs);
 
